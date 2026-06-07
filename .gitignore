@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Maven
+**/target/
+
+# Node
+**/node_modules/
+**/dist/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Local Spring configs
+backend/src/main/resources/application-local.properties
+
+# Gmail OAuth
+backend/src/main/resources/gmail/credentials.json
+backend/src/main/resources/gmail/token.json
+backend/src/main/resources/gmail/tokens/
+
+# OS / temporary files
+Thumbs.db
