@@ -15,6 +15,8 @@ public interface ApplicationRepository extends JpaRepository<JobApplication, UUI
 
     List<JobApplication> findByCompanyNameContainingIgnoreCase(String companyName);
 
+    List<JobApplication> findByCompanyNameIgnoreCase(String companyName);
+
     boolean existsByCompanyNameIgnoreCaseAndRoleIgnoreCaseAndAppliedDate(
             String companyName, String role, java.time.LocalDate appliedDate);
 }
