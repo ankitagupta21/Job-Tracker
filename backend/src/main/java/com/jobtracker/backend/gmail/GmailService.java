@@ -1,11 +1,11 @@
 package com.jobtracker.backend.gmail;
 
 import com.google.api.client.auth.oauth2.Credential;
-import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
-import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
+import com.google.api.client.auth.oauth2.TokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.javanet.NetHttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.util.store.FileDataStoreFactory;
 import com.google.api.services.gmail.Gmail;
@@ -18,10 +18,22 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.util.*;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.Objects;
 
 @Service
 @Slf4j
@@ -30,6 +42,7 @@ public class GmailService {
     private static final GsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final List<String> SCOPES = List.of(GmailScopes.GMAIL_READONLY);
     private static final String USER = "me";
+    private static final String REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 
     @Value("${gmail.credentials.path}")
     private String credentialsPath;
@@ -37,50 +50,59 @@ public class GmailService {
     @Value("${gmail.tokens.path}")
     private String tokensPath;
 
-    private Gmail gmailClient;
+    private NetHttpTransport httpTransport;
 
-    public Gmail getGmailClient() throws IOException, GeneralSecurityException {
-        if (gmailClient == null) {
-            gmailClient = buildGmailClient();
-        }
-        return gmailClient;
-    }
+    private GoogleAuthorizationCodeFlow buildFlow() throws IOException, GeneralSecurityException {
+        NetHttpTransport transport = getHttpTransport();
 
-    private Gmail buildGmailClient() throws IOException, GeneralSecurityException {
-        var httpTransport = GoogleNetHttpTransport.newTrustedTransport();
-
-        // Load credentials
         InputStream in = new FileInputStream(credentialsPath);
         GoogleClientSecrets clientSecrets = GoogleClientSecrets.load(JSON_FACTORY,
                 new InputStreamReader(in));
 
-        // Build flow
-        GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-                httpTransport, JSON_FACTORY, clientSecrets, SCOPES)
+        return new GoogleAuthorizationCodeFlow.Builder(
+                transport, JSON_FACTORY, clientSecrets, SCOPES)
                 .setDataStoreFactory(new FileDataStoreFactory(new File(tokensPath)))
                 .setAccessType("offline")
                 .build();
+    }
 
-        // Authorize
-        LocalServerReceiver receiver = new LocalServerReceiver.Builder()
-                .setPort(8888)
+    private NetHttpTransport getHttpTransport() throws GeneralSecurityException, IOException {
+        if (httpTransport == null) {
+            httpTransport = GoogleNetHttpTransport.newTrustedTransport();
+        }
+        return httpTransport;
+    }
+
+    public String getAuthorizationUrl(String redirectUri) throws IOException, GeneralSecurityException {
+        return buildFlow().newAuthorizationUrl()
+                .setRedirectUri(redirectUri)
                 .build();
-        Credential credential = new AuthorizationCodeInstalledApp(flow, receiver)
-                .authorize("user");
+    }
 
-        return new Gmail.Builder(httpTransport, JSON_FACTORY, credential)
+    public void exchangeCodeForToken(String code, String redirectUri)
+            throws IOException, GeneralSecurityException {
+        GoogleAuthorizationCodeFlow flow = buildFlow();
+        TokenResponse tokenResponse = flow.newTokenRequest(code)
+                .setRedirectUri(redirectUri)
+                .execute();
+        flow.createAndStoreCredential(tokenResponse, USER);
+        log.info("Gmail token stored successfully");
+    }
+
+    public Gmail getGmailClient() throws IOException, GeneralSecurityException {
+        GoogleAuthorizationCodeFlow flow = buildFlow();
+        Credential credential = flow.loadCredential(USER);
+        if (credential == null) {
+            throw new IllegalStateException("Gmail not connected");
+        }
+        return new Gmail.Builder(getHttpTransport(), JSON_FACTORY, credential)
                 .setApplicationName("Job Tracker")
                 .build();
     }
 
-    public void resetClient() {
-        gmailClient = null;
-    }
-
     public boolean isConnected() {
         try {
-            File tokenDir = new File(tokensPath);
-            return tokenDir.exists() && Objects.requireNonNull(tokenDir.listFiles()).length > 0;
+            return buildFlow().loadCredential(USER) != null;
         } catch (Exception e) {
             return false;
         }
@@ -95,12 +117,9 @@ public class GmailService {
     }
 
     public void disconnect() {
+        revokeToken();
+
         try {
-            // Revoke token
-            if (gmailClient != null) {
-                gmailClient = null;
-            }
-            // Delete token files
             File tokenDir = new File(tokensPath);
             if (tokenDir.exists()) {
                 for (File file : Objects.requireNonNull(tokenDir.listFiles())) {
@@ -109,7 +128,39 @@ public class GmailService {
             }
             log.info("Gmail disconnected successfully");
         } catch (Exception e) {
-            log.error("Error disconnecting Gmail", e);
+            log.error("Error deleting local Gmail tokens", e);
+        }
+    }
+
+    private void revokeToken() {
+        try {
+            GoogleAuthorizationCodeFlow flow = buildFlow();
+            Credential credential = flow.loadCredential(USER);
+            if (credential == null) {
+                return;
+            }
+
+            String token = credential.getRefreshToken() != null
+                    ? credential.getRefreshToken()
+                    : credential.getAccessToken();
+            if (token == null) {
+                return;
+            }
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(REVOKE_URL + "?token=" + token))
+                    .timeout(Duration.ofSeconds(5))
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build();
+
+            HttpResponse<Void> response = client.send(request, HttpResponse.BodyHandlers.discarding());
+            log.info("Gmail token revocation response: {}", response.statusCode());
+        } catch (Exception e) {
+            log.warn("Could not revoke Gmail token with Google (continuing to delete local token): {}",
+                    e.getMessage());
         }
     }
 

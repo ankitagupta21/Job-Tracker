@@ -14,7 +14,6 @@ import java.util.Map;
 public class OllamaService {
 
     private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ollama.base-url}")
     private String baseUrl;
