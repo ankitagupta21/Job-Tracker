@@ -48,6 +48,11 @@ public class ApplicationController {
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 
+    @GetMapping("/deleted")
+    public ResponseEntity<ApiResponse<List<JobApplication>>> getDeleted() {
+        return ResponseEntity.ok(ApiResponse.success(applicationService.getDeleted()));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<JobApplication>> getById(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(applicationService.getById(id)));
@@ -70,5 +75,11 @@ public class ApplicationController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         applicationService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Application deleted successfully", null));
+    }
+
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<ApiResponse<JobApplication>> restore(@PathVariable UUID id) {
+        JobApplication restored = applicationService.restore(id);
+        return ResponseEntity.ok(ApiResponse.success("Application restored successfully", restored));
     }
 }

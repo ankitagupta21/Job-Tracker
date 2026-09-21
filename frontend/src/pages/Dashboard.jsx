@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   const handleDelete = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm("Delete this application?")) return;
+    if (!window.confirm("Move this application to Trash?")) return;
     await deleteApplication(id);
     fetchApplications();
   };

@@ -31,23 +31,26 @@ public class EmailParser {
         }
 
         // Fallback to keyword matching
-        log.info("Falling back to keyword parser");
-        return parseWithKeywords(subject, from, body);
+        log.warn("Ollama unavailable or parsing failed — marking for manual review");
+        return new ParsedEmail(extractCompanyFromEmail(from), "Unknown", null, 0.0, "", false);
     }
 
     // ── AI Parsing ───────────────────────────────────────────────────────────
 
     private ParsedEmail parseWithAI(String subject, String from, String body) {
         String prompt = """
-                Analyze this job email. Return JSON only, no explanation.
+                Analyze this email. First determine if it is a genuine, personal update about
+                a specific job application the recipient submitted — NOT a newsletter,
+                job-alert digest, marketing email, or general recruitment promotion.
+
+                Return JSON only, no explanation.
                 Subject: %s
                 From: %s
                 Body: %s
 
-                JSON: {"company":"","role":"","status":"APPLIED|ONLINE_TEST|INTERVIEW|OFFERED|REJECTED|UNKNOWN","confidence":0.0,"summary":""}
+                JSON: {"isJobApplicationEmail": true|false, "company":"", "role":"", "status":"APPLIED|ONLINE_TEST|INTERVIEW|OFFERED|REJECTED|UNKNOWN", "confidence":0.0, "summary":""}
                 """
-                .formatted(subject, from,
-                        body.length() > 300 ? body.substring(0, 300) : body);
+                .formatted(subject, from, body.length() > 300 ? body.substring(0, 300) : body);
 
         try {
             String response = ollamaService.generate(prompt);
@@ -56,16 +59,22 @@ public class EmailParser {
 
             JsonNode json = objectMapper.readTree(response);
 
-            String company = json.path("company").asText("Unknown");
-            String role = json.path("role").asText("Unknown");
+            String company = blankToDefault(json.path("company").asText(""), extractCompanyFromEmail(from));
+            String role = blankToDefault(json.path("role").asText(""), "Unknown");
+
             String statusStr = json.path("status").asText("UNKNOWN");
             double confidence = json.path("confidence").asDouble(0.0);
             String summary = json.path("summary").asText("");
 
             ApplicationStatus status = parseStatus(statusStr);
 
-            log.info("AI parsed email — Company: {}, Status: {}, Confidence: {}",
-                    company, status, confidence);
+            boolean isJobApplicationEmail = json.path("isJobApplicationEmail").asBoolean(false);
+            if (!isJobApplicationEmail) {
+                log.info("AI classified as non-application email — skipping");
+                return new ParsedEmail(company, role, null, confidence, summary, true);
+            }
+            log.info("AI parsed email — Subject: {}, From: {}, Company: {}, Status: {}, Confidence: {}",
+                    subject, from, company, status, confidence);
 
             return new ParsedEmail(company, role, status, confidence, summary, true);
 
@@ -73,33 +82,6 @@ public class EmailParser {
             log.error("AI parsing failed: {}", e.getMessage());
             return null;
         }
-    }
-
-    // ── Keyword Fallback ─────────────────────────────────────────────────────
-
-    private ParsedEmail parseWithKeywords(String subject, String from, String body) {
-        String text = (subject + " " + body).toLowerCase();
-        ApplicationStatus status = null;
-
-        if (containsAny(text, "pleased to offer", "offer of employment",
-                "congratulations", "welcome to the team")) {
-            status = ApplicationStatus.OFFERED;
-        } else if (containsAny(text, "schedule an interview", "interview invitation",
-                "invite you for an interview", "like to speak with you")) {
-            status = ApplicationStatus.INTERVIEW;
-        } else if (containsAny(text, "online assessment", "coding challenge",
-                "hackerrank", "codility", "technical assessment")) {
-            status = ApplicationStatus.ONLINE_TEST;
-        } else if (containsAny(text, "unfortunately", "not moving forward",
-                "decided to move forward with other", "regret to inform")) {
-            status = ApplicationStatus.REJECTED;
-        } else if (containsAny(text, "thank you for applying",
-                "received your application", "application has been received")) {
-            status = ApplicationStatus.APPLIED;
-        }
-
-        String company = extractCompanyFromEmail(from);
-        return new ParsedEmail(company, "Unknown", status, 0.6, "", false);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -113,6 +95,10 @@ public class EmailParser {
         }
     }
 
+    private String blankToDefault(String value, String defaultValue) {
+        return (value == null || value.isBlank()) ? defaultValue : value;
+    }
+
     public String extractCompanyFromEmail(String from) {
         try {
             if (from.contains("@")) {
@@ -124,14 +110,6 @@ public class EmailParser {
         } catch (Exception ignored) {
         }
         return "Unknown";
-    }
-
-    private boolean containsAny(String text, String... keywords) {
-        for (String keyword : keywords) {
-            if (text.contains(keyword))
-                return true;
-        }
-        return false;
     }
 
     // ── Result Model ─────────────────────────────────────────────────────────

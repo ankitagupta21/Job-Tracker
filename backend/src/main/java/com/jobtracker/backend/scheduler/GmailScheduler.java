@@ -3,12 +3,14 @@ package com.jobtracker.backend.scheduler;
 import com.google.api.services.gmail.model.Message;
 import com.jobtracker.backend.entity.GmailThread;
 import com.jobtracker.backend.entity.JobApplication;
+import com.jobtracker.backend.entity.ScanState;
 import com.jobtracker.backend.entity.StatusHistory;
 import com.jobtracker.backend.enums.ApplicationSource;
 import com.jobtracker.backend.enums.ApplicationStatus;
 import com.jobtracker.backend.gmail.GmailService;
 import com.jobtracker.backend.repository.ApplicationRepository;
 import com.jobtracker.backend.repository.GmailThreadRepository;
+import com.jobtracker.backend.repository.ScanStateRepository;
 import com.jobtracker.backend.repository.StatusHistoryRepository;
 import com.jobtracker.backend.utils.EmailParser;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,8 @@ public class GmailScheduler {
     @Value("${gmail.scan.enabled}")
     private boolean scanEnabled;
 
+    private final ScanStateRepository scanStateRepository;
+
     @Scheduled(fixedDelay = 1800000) // every 30 minutes
     public void scanGmail() {
         if (!scanEnabled || !gmailService.isConnected()) {
@@ -43,66 +47,72 @@ public class GmailScheduler {
         }
 
         log.info("Starting Gmail scan...");
+        LocalDateTime scanStartTime = LocalDateTime.now();
+        ScanState state = scanStateRepository.findAll().stream().findFirst().orElse(null);
+        LocalDateTime lastScannedAt = state != null ? state.getLastScannedAt() : null;
+
         try {
-            List<Message> messages = gmailService.fetchRecentMessages(50);
+            List<Message> messages = gmailService.fetchRecentMessages(50, lastScannedAt);
             int processed = 0;
 
             for (Message message : messages) {
-                String threadId = message.getThreadId();
+                try {
+                    String threadId = message.getThreadId();
 
-                // Skip already processed threads
-                if (gmailThreadRepository.existsByThreadId(threadId))
-                    continue;
+                    if (gmailThreadRepository.existsByThreadId(threadId))
+                        continue;
 
-                String subject = gmailService.getSubject(message);
-                String from = gmailService.getFrom(message);
-                String body = gmailService.getBody(message);
+                    String subject = gmailService.getSubject(message);
+                    String from = gmailService.getFrom(message);
+                    String body = gmailService.getBody(message);
 
-                EmailParser.ParsedEmail parsed = emailParser.parse(subject, from, body);
+                    EmailParser.ParsedEmail parsed = emailParser.parse(subject, from, body);
+                    ApplicationStatus detectedStatus = parsed.status();
 
-                ApplicationStatus detectedStatus = parsed.status();
+                    if (detectedStatus == null) {
+                        saveNeedsReview(threadId, subject, from);
+                        continue;
+                    }
 
-                if (detectedStatus == null) {
-                    saveNeedsReview(threadId, subject, from);
-                    continue;
+                    if (parsed.parsedByAI() && parsed.confidence() < 0.6) {
+                        saveNeedsReview(threadId, subject, from);
+                        continue;
+                    }
+
+                    JobApplication app = findOrCreateApplication(
+                            parsed.company(), parsed.role(), detectedStatus);
+
+                    if (!app.getStatus().equals(detectedStatus)) {
+                        ApplicationStatus oldStatus = app.getStatus();
+                        app.setStatus(detectedStatus);
+                        app.setLastUpdated(LocalDateTime.now());
+                        applicationRepository.save(app);
+
+                        StatusHistory history = new StatusHistory();
+                        history.setApplication(app);
+                        history.setOldStatus(oldStatus);
+                        history.setNewStatus(detectedStatus);
+                        history.setChangedBy(StatusHistory.ChangeSource.AUTO);
+                        history.setChangedAt(LocalDateTime.now());
+                        statusHistoryRepository.save(history);
+                    }
+
+                    GmailThread thread = new GmailThread();
+                    thread.setApplication(app);
+                    thread.setThreadId(threadId);
+                    thread.setSubject(subject);
+                    thread.setReceivedAt(LocalDateTime.now());
+                    gmailThreadRepository.save(thread);
+
+                    processed++;
+                } catch (Exception e) {
+                    log.error("Failed to process message {}: {}", message.getId(), e.getMessage());
                 }
-
-                // Skip low confidence AI results
-                if (parsed.parsedByAI() && parsed.confidence() < 0.6) {
-                    saveNeedsReview(threadId, subject, from);
-                    continue;
-                }
-
-                JobApplication app = findOrCreateApplication(
-                        parsed.company(), parsed.role(), detectedStatus);
-
-                // Update status if changed
-                if (!app.getStatus().equals(detectedStatus)) {
-                    ApplicationStatus oldStatus = app.getStatus();
-                    app.setStatus(detectedStatus);
-                    app.setLastUpdated(LocalDateTime.now());
-                    applicationRepository.save(app);
-
-                    // Log history
-                    StatusHistory history = new StatusHistory();
-                    history.setApplication(app);
-                    history.setOldStatus(oldStatus);
-                    history.setNewStatus(detectedStatus);
-                    history.setChangedBy(StatusHistory.ChangeSource.AUTO);
-                    history.setChangedAt(LocalDateTime.now());
-                    statusHistoryRepository.save(history);
-                }
-
-                // Save thread reference
-                GmailThread thread = new GmailThread();
-                thread.setApplication(app);
-                thread.setThreadId(threadId);
-                thread.setSubject(subject);
-                thread.setReceivedAt(LocalDateTime.now());
-                gmailThreadRepository.save(thread);
-
-                processed++;
             }
+
+            ScanState newState = state != null ? state : new ScanState();
+            newState.setLastScannedAt(scanStartTime);
+            scanStateRepository.save(newState);
 
             log.info("Gmail scan complete. Processed {} new emails.", processed);
         } catch (Exception e) {
@@ -114,7 +124,7 @@ public class GmailScheduler {
             String role,
             ApplicationStatus status) {
         return applicationRepository
-                .findByCompanyNameIgnoreCase(companyName)
+                .findByCompanyNameIgnoreCaseAndDeletedFalse(companyName)
                 .stream().findFirst()
                 .orElseGet(() -> {
                     JobApplication app = new JobApplication();

@@ -66,15 +66,19 @@ public class ApplicationService {
     // ── Read ────────────────────────────────────────────────────────────────
 
     public List<JobApplication> getAll() {
-        return applicationRepository.findAll();
+        return applicationRepository.findByDeletedFalse();
     }
 
     public List<JobApplication> getByStatus(ApplicationStatus status) {
-        return applicationRepository.findByStatus(status);
+        return applicationRepository.findByStatusAndDeletedFalse(status);
     }
 
     public List<JobApplication> searchByCompany(String companyName) {
-        return applicationRepository.findByCompanyNameContainingIgnoreCase(companyName);
+        return applicationRepository.findByCompanyNameContainingIgnoreCaseAndDeletedFalse(companyName);
+    }
+
+    public List<JobApplication> getDeleted() {
+        return applicationRepository.findByDeletedTrue();
     }
 
     public JobApplication getById(UUID id) {
@@ -128,9 +132,17 @@ public class ApplicationService {
     @Transactional
     public void delete(UUID id) {
         JobApplication app = getById(id);
-        statusHistoryRepository.deleteAll(
-                statusHistoryRepository.findByApplicationIdOrderByChangedAtAsc(id));
-        applicationRepository.delete(app);
+        app.setDeleted(true);
+        app.setLastUpdated(LocalDateTime.now());
+        applicationRepository.save(app);
+    }
+
+    @Transactional
+    public JobApplication restore(UUID id) {
+        JobApplication app = getById(id);
+        app.setDeleted(false);
+        app.setLastUpdated(LocalDateTime.now());
+        return applicationRepository.save(app);
     }
 
     // ── Kafka helper ────────────────────────────────────────────────────────

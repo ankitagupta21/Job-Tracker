@@ -27,7 +27,7 @@ public class OllamaService {
     public OllamaService() {
         var factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5000);
-        factory.setReadTimeout(30000);
+        factory.setReadTimeout(90000);
         this.restTemplate = new RestTemplate(factory);
     }
 

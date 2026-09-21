@@ -30,10 +30,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 @Slf4j
@@ -164,27 +168,54 @@ public class GmailService {
         }
     }
 
-    public List<Message> fetchRecentMessages(int maxResults) {
+    public List<Message> fetchRecentMessages(int maxResults, LocalDateTime after) {
         try {
             Gmail gmail = getGmailClient();
+
+            String query = "(application OR interview OR offer OR rejected OR assessment OR "
+                    + "candidacy OR \"next steps\" OR position OR recruiter) "
+                    + "-category:promotions -category:social";
+
+            if (after != null) {
+                long epochSeconds = after.atZone(ZoneId.systemDefault()).toEpochSecond();
+                query += " after:" + epochSeconds;
+            }
+
             ListMessagesResponse response = gmail.users().messages()
                     .list(USER)
-                    .setQ("subject:(application OR interview OR offer OR rejected OR assessment OR hiring)")
+                    .setQ(query)
                     .setMaxResults((long) maxResults)
                     .execute();
+
+            log.info("Gmail search query: [{}] — matched {} messages", query,
+                    response.getMessages() != null ? response.getMessages().size() : 0);
 
             if (response.getMessages() == null)
                 return List.of();
 
-            List<Message> messages = new ArrayList<>();
-            for (Message msg : response.getMessages()) {
-                Message full = gmail.users().messages()
-                        .get(USER, msg.getId())
-                        .setFormat("full")
-                        .execute();
-                messages.add(full);
+            ExecutorService executor = Executors.newFixedThreadPool(10);
+            try {
+                List<CompletableFuture<Message>> futures = response.getMessages().stream()
+                        .map(msg -> CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return gmail.users().messages()
+                                        .get(USER, msg.getId())
+                                        .setFormat("full")
+                                        .execute();
+                            } catch (IOException e) {
+                                log.error("Failed to fetch message {}", msg.getId(), e);
+                                return null;
+                            }
+                        }, executor))
+                        .toList();
+
+                return futures.stream()
+                        .map(CompletableFuture::join)
+                        .filter(Objects::nonNull)
+                        .toList();
+            } finally {
+                executor.shutdown();
             }
-            return messages;
         } catch (Exception e) {
             log.error("Error fetching Gmail messages", e);
             return List.of();

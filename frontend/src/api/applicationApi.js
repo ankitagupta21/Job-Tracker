@@ -20,5 +20,9 @@ export const updateApplication = (id, data) =>
 
 export const deleteApplication = (id) => api.delete(`/applications/${id}`);
 
+export const getDeletedApplications = () => api.get("/applications/deleted");
+
+export const restoreApplication = (id) => api.post(`/applications/${id}/restore`);
+
 export const getApplicationHistory = (id) =>
   api.get(`/applications/${id}/history`);

@@ -50,4 +50,7 @@ public class JobApplication {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime lastUpdated = LocalDateTime.now();
+
+    @Column(nullable = false)
+    private boolean deleted = false;
 }

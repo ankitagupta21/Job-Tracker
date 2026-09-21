@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import AddApplication from "./pages/AddApplication";
 import ApplicationDetail from "./pages/ApplicationDetail";
 import Settings from "./pages/Settings";
+import Trash from "./pages/Trash";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/add" element={<AddApplication />} />
           <Route path="/application/:id" element={<ApplicationDetail />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/trash" element={<Trash />} />
         </Routes>
       </div>
     </BrowserRouter>

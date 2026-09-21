@@ -11,11 +11,15 @@ import com.jobtracker.backend.enums.ApplicationStatus;
 
 @Repository
 public interface ApplicationRepository extends JpaRepository<JobApplication, UUID> {
-    List<JobApplication> findByStatus(ApplicationStatus status);
+    List<JobApplication> findByDeletedFalse();
 
-    List<JobApplication> findByCompanyNameContainingIgnoreCase(String companyName);
+    List<JobApplication> findByDeletedTrue();
 
-    List<JobApplication> findByCompanyNameIgnoreCase(String companyName);
+    List<JobApplication> findByStatusAndDeletedFalse(ApplicationStatus status);
+
+    List<JobApplication> findByCompanyNameContainingIgnoreCaseAndDeletedFalse(String companyName);
+
+    List<JobApplication> findByCompanyNameIgnoreCaseAndDeletedFalse(String companyName);
 
     boolean existsByCompanyNameIgnoreCaseAndRoleIgnoreCaseAndAppliedDate(
             String companyName, String role, java.time.LocalDate appliedDate);
