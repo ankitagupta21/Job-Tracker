@@ -30,7 +30,7 @@ public class EmailParser {
                 return result;
         }
 
-        // Fallback to keyword matching
+        // No AI available or parsing failed — mark for manual review rather than guessing
         log.warn("Ollama unavailable or parsing failed — marking for manual review");
         return new ParsedEmail(extractCompanyFromEmail(from), "Unknown", null, 0.0, "", false);
     }

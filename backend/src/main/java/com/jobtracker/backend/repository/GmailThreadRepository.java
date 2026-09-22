@@ -9,6 +9,4 @@ import java.util.UUID;
 @Repository
 public interface GmailThreadRepository extends JpaRepository<GmailThread, UUID> {
     boolean existsByThreadId(String threadId);
-
-    void deleteByApplicationId(UUID applicationId);
 }

@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>JobTracker — track your job search automatically</title>
+<meta name="description" content="JobTracker watches your Gmail inbox, uses local AI to detect application updates, and keeps your job search organized — self-hosted, private, and free." />
+<style>
+  :root {
+    --indigo-50: #eef2ff;
+    --indigo-100: #e0e7ff;
+    --indigo-500: #6366f1;
+    --indigo-600: #4f46e5;
+    --indigo-700: #4338ca;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --green-500: #22c55e;
+    --purple-500: #a855f7;
+    --red-500: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--gray-800);
+    background: #ffffff;
+    line-height: 1.5;
+  }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* Nav */
+  nav {
+    border-bottom: 1px solid var(--gray-200);
+    padding: 16px 0;
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-weight: 800; font-size: 20px; color: var(--indigo-600); }
+  .nav-links { display: flex; gap: 28px; align-items: center; }
+  .nav-links a { font-size: 14px; font-weight: 500; color: var(--gray-600); }
+  .nav-links a:hover { color: var(--gray-900); }
+  .btn-github {
+    background: var(--gray-900);
+    color: #fff !important;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  /* Hero */
+  .hero { padding: 88px 0 72px; text-align: center; }
+  .hero h1 {
+    font-size: 44px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    margin: 0 0 18px;
+    color: var(--gray-900);
+  }
+  .hero h1 span { color: var(--indigo-600); }
+  .hero p {
+    font-size: 18px;
+    color: var(--gray-500);
+    max-width: 560px;
+    margin: 0 auto 36px;
+  }
+  .hero-ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--indigo-600);
+    color: #fff;
+    padding: 13px 26px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--indigo-700); }
+  .btn-secondary {
+    background: #fff;
+    color: var(--gray-700);
+    padding: 13px 26px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 15px;
+    border: 1px solid var(--gray-200);
+  }
+  .btn-secondary:hover { border-color: var(--gray-400); }
+
+  /* Mock dashboard preview */
+  .preview {
+    margin-top: 56px;
+    border: 1px solid var(--gray-200);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px -20px rgba(17, 24, 39, 0.25);
+    text-align: left;
+  }
+  .preview-bar {
+    background: var(--gray-50);
+    border-bottom: 1px solid var(--gray-200);
+    padding: 12px 16px;
+    display: flex;
+    gap: 6px;
+  }
+  .preview-bar span {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--gray-200); display: inline-block;
+  }
+  .preview-body { padding: 28px; background: var(--gray-50); }
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .stat-card {
+    background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; padding: 16px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--gray-500); margin-bottom: 6px; }
+  .stat-card .value { font-size: 24px; font-weight: 800; }
+  .v-indigo { color: var(--indigo-600); } .v-purple { color: var(--purple-500); }
+  .v-green { color: var(--green-500); } .v-red { color: var(--red-500); }
+  .table-mock {
+    background: #fff; border: 1px solid var(--gray-200); border-radius: 12px; padding: 4px 0; overflow: hidden;
+  }
+  .row-mock {
+    display: flex; align-items: center; padding: 12px 16px; font-size: 13px; gap: 14px;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .row-mock:last-child { border-bottom: none; }
+  .row-mock .company { font-weight: 600; width: 140px; }
+  .row-mock .role { color: var(--gray-500); flex: 1; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+  .badge-interview { background: #ede9fe; color: #7c3aed; }
+  .badge-applied { background: var(--indigo-50); color: var(--indigo-600); }
+  .badge-offer { background: #dcfce7; color: #16a34a; }
+
+  /* Features */
+  .section { padding: 80px 0; }
+  .section-alt { background: var(--gray-50); }
+  .section-head { text-align: center; margin-bottom: 52px; }
+  .section-head h2 {
+    font-size: 32px; font-weight: 800; color: var(--gray-900); margin: 0 0 12px; letter-spacing: -0.01em;
+  }
+  .section-head p { color: var(--gray-500); font-size: 16px; margin: 0; }
+  .features {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px;
+  }
+  .feature {
+    background: #fff; border: 1px solid var(--gray-200); border-radius: 14px; padding: 26px;
+  }
+  .feature .icon {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--indigo-50); color: var(--indigo-600);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 16px;
+  }
+  .feature h3 { font-size: 17px; margin: 0 0 8px; color: var(--gray-900); }
+  .feature p { font-size: 14px; color: var(--gray-500); margin: 0; }
+
+  /* Install */
+  .install-box {
+    background: var(--gray-900);
+    border-radius: 16px;
+    padding: 8px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  .install-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; color: var(--gray-400); font-size: 13px;
+  }
+  .code-block {
+    background: #17181c;
+    border-radius: 10px;
+    padding: 20px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    color: #e5e7eb;
+    overflow-x: auto;
+    line-height: 1.8;
+  }
+  .code-block .comment { color: #6b7280; }
+  .code-block .cmd { color: #93c5fd; }
+  .copy-btn {
+    background: var(--indigo-600); color: #fff; border: none; border-radius: 7px;
+    padding: 6px 12px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .copy-btn:hover { background: var(--indigo-700); }
+  .copy-btn.copied { background: var(--green-500); }
+  .prereq-group { margin-bottom: 20px; }
+  .prereq-label {
+    text-align: center; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--gray-400); margin-bottom: 10px;
+  }
+  .prereqs {
+    display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;
+  }
+  .prereq { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--gray-600); }
+  .prereq .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--indigo-500); }
+  .env-note {
+    max-width: 720px; margin: 24px auto 0; background: var(--indigo-50); border: 1px solid var(--indigo-100);
+    border-radius: 12px; padding: 16px 20px; font-size: 13.5px; color: var(--gray-700);
+  }
+  .env-note strong { color: var(--indigo-700); }
+
+  /* Tech stack */
+  .stack-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 24px; }
+  .stack-pill {
+    background: #fff; border: 1px solid var(--gray-200); border-radius: 999px;
+    padding: 7px 16px; font-size: 13px; font-weight: 500; color: var(--gray-600);
+  }
+
+  footer {
+    border-top: 1px solid var(--gray-200); padding: 32px 0; text-align: center;
+    color: var(--gray-400); font-size: 13px;
+  }
+
+  @media (max-width: 760px) {
+    .hero h1 { font-size: 32px; }
+    .features { grid-template-columns: 1fr; }
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .nav-links { gap: 14px; }
+    .row-mock .role { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">JobTracker</div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a class="btn-github" href="https://github.com/ankitagupta21/Job-Tracker" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>Stop updating your job tracker<br /><span>by hand.</span></h1>
+    <p>JobTracker watches your Gmail inbox, uses a local AI model to detect interview invites, offers, and rejections, and keeps your dashboard up to date automatically — self-hosted, private, and free.</p>
+    <div class="hero-ctas">
+      <a href="#install" class="btn-primary">Get started →</a>
+      <a href="https://github.com/ankitagupta21/Job-Tracker" target="_blank" rel="noreferrer" class="btn-secondary">View on GitHub</a>
+    </div>
+
+    <div class="preview">
+      <div class="preview-bar"><span></span><span></span><span></span></div>
+      <div class="preview-body">
+        <div class="stat-row">
+          <div class="stat-card"><div class="label">Total Applied</div><div class="value v-indigo">14</div></div>
+          <div class="stat-card"><div class="label">Interviews</div><div class="value v-purple">4</div></div>
+          <div class="stat-card"><div class="label">Offers</div><div class="value v-green">1</div></div>
+          <div class="stat-card"><div class="label">Rejected</div><div class="value v-red">3</div></div>
+        </div>
+        <div class="table-mock">
+          <div class="row-mock"><span class="company">GoodLives</span><span class="role">Software Engineer 2</span><span class="badge badge-interview">Interview</span></div>
+          <div class="row-mock"><span class="company">Walmart</span><span class="role">SDE2</span><span class="badge badge-applied">Applied</span></div>
+          <div class="row-mock"><span class="company">Acme Corp</span><span class="role">Backend Engineer</span><span class="badge badge-offer">Offered</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Built for how job searches actually work</h2>
+      <p>No manual data entry. No spreadsheets falling out of sync with reality.</p>
+    </div>
+    <div class="features">
+      <div class="feature">
+        <div class="icon">✉</div>
+        <h3>Automatic Gmail scanning</h3>
+        <p>Runs on a schedule, searches your inbox for application-related emails, and skips anything it's already seen.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🧠</div>
+        <h3>Local AI classification</h3>
+        <p>Uses Ollama running on your own machine to read each email and detect status changes — nothing sent to a third-party API.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">📊</div>
+        <h3>Full status timeline</h3>
+        <p>Every status change is logged with a history, so you can see exactly when an application moved from Applied to Interview to Offer.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🗑</div>
+        <h3>Trash, not delete</h3>
+        <p>Removed an application by mistake? It's recoverable in Trash, not gone forever.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🔒</div>
+        <h3>Self-hosted &amp; private</h3>
+        <p>Your data lives in a Postgres database on your own machine. No cloud account, no third party sees your inbox.</p>
+      </div>
+      <div class="feature">
+        <div class="icon">🛠</div>
+        <h3>Open source</h3>
+        <p>Spring Boot, React, Kafka, and Postgres under the hood. Inspect it, modify it, extend it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-alt" id="install">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Install it in three commands</h2>
+      <p>Runs entirely on your machine via Docker. No account, no sign-up.</p>
+    </div>
+
+    <div class="prereq-group">
+      <div class="prereq-label">To run the dashboard</div>
+      <div class="prereqs">
+        <div class="prereq"><span class="dot"></span>Docker Desktop</div>
+        <div class="prereq"><span class="dot"></span>Git</div>
+      </div>
+    </div>
+    <div class="prereq-group">
+      <div class="prereq-label">For automatic Gmail scanning (the whole point)</div>
+      <div class="prereqs">
+        <div class="prereq"><span class="dot"></span>Ollama, running locally, with a model pulled</div>
+        <div class="prereq"><span class="dot"></span>A Google Cloud OAuth credential for your Gmail</div>
+      </div>
+    </div>
+
+    <div class="install-box">
+      <div class="install-header">
+        <span>Terminal</span>
+        <button class="copy-btn" id="copyBtn" onclick="copyInstall()">Copy</button>
+      </div>
+      <div class="code-block" id="installCmd"><span class="comment"># 1. Clone the repo</span>
+<span class="cmd">git clone https://github.com/ankitagupta21/Job-Tracker.git</span>
+<span class="cmd">cd Job-Tracker</span>
+
+<span class="comment"># 2. Configure your environment</span>
+<span class="cmd">cp .env.example .env</span>
+<span class="comment"># edit .env with your DB password, etc.</span>
+
+<span class="comment"># 3. Start everything</span>
+<span class="cmd">docker compose up -d --build</span>
+
+<span class="comment"># Dashboard: http://localhost:3000</span>
+<span class="comment"># API:       http://localhost:8080</span></div>
+    </div>
+
+    <div class="env-note">
+      <strong>Note:</strong> the dashboard and manual application tracking work fine out of the box with just Docker and Git. To get <em>automatic</em> Gmail scanning, you'll also need: a Google Cloud OAuth <code>credentials.json</code> for your own Gmail account, placed at <code>~/.job-tracker/credentials.json</code>; and <a href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> installed and running locally with a model pulled (e.g. <code>ollama pull llama3</code>). Without these, scanned emails just sit unclassified — the rest of the app still works.
+    </div>
+    <div class="env-note" style="margin-top: 12px;">
+      <strong>Linux users:</strong> Ollama connectivity currently relies on Docker Desktop's <code>host.docker.internal</code> DNS name, which native Docker Engine on Linux doesn't resolve by default. You'll need to add <code>extra_hosts: ["host.docker.internal:host-gateway"]</code> to the <code>backend</code> service in <code>docker-compose.yml</code> for AI classification to reach Ollama.
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap" style="text-align:center;">
+    <div class="section-head" style="margin-bottom: 0;">
+      <h2>Built with</h2>
+    </div>
+    <div class="stack-row">
+      <span class="stack-pill">Spring Boot</span>
+      <span class="stack-pill">React</span>
+      <span class="stack-pill">PostgreSQL</span>
+      <span class="stack-pill">Apache Kafka</span>
+      <span class="stack-pill">Ollama</span>
+      <span class="stack-pill">Docker Compose</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    JobTracker — self-hosted job application tracker · <a href="https://github.com/ankitagupta21/Job-Tracker" target="_blank" rel="noreferrer" style="color: var(--indigo-600);">Source on GitHub</a>
+  </div>
+</footer>
+
+<script>
+  function copyInstall() {
+    const text = "git clone https://github.com/ankitagupta21/Job-Tracker.git\ncd Job-Tracker\ncp .env.example .env\ndocker compose up -d --build";
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copyBtn');
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = original; btn.classList.remove('copied'); }, 1800);
+    });
+  }
+</script>
+
+</body>
+</html>
